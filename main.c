@@ -3,21 +3,48 @@
 #include <string.h>
 #include "mpi.h"
 
-int main(int argc, char* argv[]) {
+int main(int argc, char *argv[]) {
     MPI_Init(&argc, &argv);
-    int my_rank;
-    MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);
-
-    if (my_rank < 2) {
-        int other_rank = 1 - my_rank;
-        int tag = 0;
-        char message[14];
-        sprintf(message, "Hello, I am %d", my_rank);
-        MPI_Status status;
-        MPI_Send(message, strlen(message) + 1, MPI_CHAR, other_rank, tag, MPI_COMM_WORLD);
-        MPI_Recv(message, 100, MPI_CHAR, other_rank, tag, MPI_COMM_WORLD, &status);
-        printf("%s\n", message);
+    int rank;
+    int processCount;
+    int rootRank = 0;
+    int elementCount = 4;
+    int elements[4] = {-1, 2, 9, 5};
+    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &processCount);
+    int elementsPerProcess = elementCount / processCount;
+    int local[elementsPerProcess];
+    MPI_Scatter(elements, elementsPerProcess, MPI_INT, local, elementsPerProcess, MPI_INT, 0, MPI_COMM_WORLD);
+    int offset = 0;
+    if (rank == rootRank) {
+        for (int i = 0; i < elementCount; i++) {
+            if (elements[i] < offset) {
+                offset = elements[i];
+            }
+        }
     }
-    MPI_Finalize();
-    return EXIT_SUCCESS;
+    if (rank == rootRank) {
+        for (int process = 0; process < processCount; process++) {
+            if (process != rootRank) {
+                MPI_Send(&offset, 1, MPI_INT, process, 0,
+                         MPI_COMM_WORLD);
+            }
+        }
+    } else {
+        MPI_Recv(&offset, 1, MPI_INT, rootRank, 0, MPI_COMM_WORLD, NULL);
+    }
+
+    for (int i = 0; i < elementsPerProcess; i++) {
+        local[i] = local[i] - offset;
+    }
+
+    MPI_Gather(local, elementsPerProcess, MPI_INT, elements,
+               elementsPerProcess, MPI_INT, rootRank, MPI_COMM_WORLD);
+
+    if (rank == rootRank) {
+        for (int i = 0; i < elementCount; i++) {
+            printf("%i ", elements[i]);
+        }
+    }
+    return 0;
 }
